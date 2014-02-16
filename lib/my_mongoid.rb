@@ -11,9 +11,10 @@ module MyMongoid
 end
 
 class MyMongoid::Field
-  attr_reader :name
-  def initialize(name)
+  attr_reader :name, :options
+  def initialize(name,options)
     @name = name
+    @options = options
   end
 end
 
@@ -27,7 +28,7 @@ module MyMongoid::Document
   def self.included(klass)
     klass.module_eval do
       extend ClassMethods
-      field :_id
+      field :_id, :as => :id
       MyMongoid.register_model(klass)
     end
   end
@@ -65,11 +66,12 @@ module MyMongoid::Document::ClassMethods
     true
   end
 
-  def field(name)
+  def field(name,opts={})
     name = name.to_s
     @fields ||= {}
     raise MyMongoid::DuplicateFieldError if @fields.has_key?(name)
-    @fields[name] = MyMongoid::Field.new(name)
+    @fields[name] = MyMongoid::Field.new(name,opts)
+
     self.module_eval do
       define_method(name) do
         read_attribute(name)
@@ -77,6 +79,14 @@ module MyMongoid::Document::ClassMethods
 
       define_method("#{name}=") do |value|
         write_attribute(name,value)
+      end
+    end
+
+    if alias_name = opts[:as]
+      alias_name = alias_name.to_s
+      self.module_eval do
+        alias_method alias_name, name
+        alias_method "#{alias_name}=", "#{name}="
       end
     end
   end
