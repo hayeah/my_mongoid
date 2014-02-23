@@ -1,5 +1,19 @@
 require "my_mongoid/version"
 
+require "moped"
+
+class MyMongoid::DuplicateFieldError < RuntimeError
+end
+
+class MyMongoid::UnknownAttributeError < RuntimeError
+end
+
+class MyMongoid::UnconfiguredDatabaseError < RuntimeError
+end
+
+class MyMongoid::RecordNotFoundError < RuntimeError
+end
+
 module MyMongoid
   def self.models
     @models ||= []
@@ -7,6 +21,26 @@ module MyMongoid
 
   def self.register_model(klass)
     models.push klass if !models.include?(klass)
+  end
+
+  def self.configuration
+    Configuration.instance
+  end
+
+  def self.configure
+    yield configuration
+  end
+
+  def self.session
+    return @session if defined?(@session)
+    host = configuration.host
+    database = configuration.database
+    if host.nil? || database.nil?
+      raise UnconfiguredDatabaseError
+    end
+    @session = Moped::Session.new([host])
+    @session.use(database)
+    @session
   end
 end
 
@@ -18,10 +52,12 @@ class MyMongoid::Field
   end
 end
 
-class MyMongoid::DuplicateFieldError < RuntimeError
-end
+class MyMongoid::Configuration
+  require "singleton"
+  include Singleton
 
-class MyMongoid::UnknownAttributeError < RuntimeError
+  attr_accessor :host
+  attr_accessor :database
 end
 
 module MyMongoid::Document
@@ -37,7 +73,12 @@ module MyMongoid::Document
   def initialize(attrs)
     raise ArgumentError unless attrs.is_a?(Hash)
     @attributes = {}
+    @new_record = true
     process_attributes(attrs)
+  end
+
+  def to_document
+    attributes
   end
 
   def read_attribute(name)
@@ -56,14 +97,34 @@ module MyMongoid::Document
   end
   alias_method :attributes=, :process_attributes
 
-  def new_record?
+  def save
+    if self.id.nil?
+      self.id = BSON::ObjectId.new
+    end
+
+    result = self.class.collection.insert(self.to_document)
+
+    @new_record = false
     true
+  end
+
+  def new_record?
+    @new_record == true
   end
 end
 
 module MyMongoid::Document::ClassMethods
+  require "active_support/inflector"
   def is_mongoid_model?
     true
+  end
+
+  def collection_name
+    self.to_s.tableize
+  end
+
+  def collection
+    MyMongoid.session[collection_name]
   end
 
   def field(name,opts={})
@@ -93,5 +154,25 @@ module MyMongoid::Document::ClassMethods
 
   def fields
     @fields
+  end
+
+  def create(attrs)
+    event = Event.new(attrs)
+    event.save
+    event
+  end
+
+  def instantiate(attrs)
+    doc = allocate
+    doc.instance_variable_set(:@attributes,attrs)
+    doc
+  end
+
+  def find(query)
+    result = self.collection.find(query).one
+    if result.nil?
+      raise MyMongoid::RecordNotFoundError
+    end
+    Event.instantiate(result)
   end
 end
