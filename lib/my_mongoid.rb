@@ -86,6 +86,10 @@ module MyMongoid::Document
   end
 
   def write_attribute(name,value)
+    old_value = read_attribute(name)
+    unless changed_attributes.has_key?(name) || old_value == value
+      changed_attributes[name] = old_value
+    end
     @attributes[name] = value
   end
 
@@ -98,6 +102,17 @@ module MyMongoid::Document
   alias_method :attributes=, :process_attributes
 
   def save
+    if new_record?
+      insert_root_document
+    else
+      update_document
+    end
+
+    clear_changed_attributes
+    true
+  end
+
+  def insert_root_document
     if self.id.nil?
       self.id = BSON::ObjectId.new
     end
@@ -105,12 +120,60 @@ module MyMongoid::Document
     result = self.class.collection.insert(self.to_document)
 
     @new_record = false
-    true
+  end
+
+  def update_attributes(attrs)
+    process_attributes(attrs)
+    save
+  end
+
+  def update_document
+    updates = atomic_updates
+    if !updates.empty?
+      selector = {"_id" => self.id}
+      self.class.collection.find(selector).update(updates)
+    end
   end
 
   def new_record?
     @new_record == true
   end
+
+  def clear_changed_attributes
+    @changed_attributes = {}
+  end
+
+  def changed_attributes
+    @changed_attributes ||= {}
+  end
+
+  def changed?
+    !changed_attributes.empty?
+  end
+
+  def atomic_updates
+    if !changed? || new_record?
+      {}
+    else
+      changes = {}
+      changed_attributes.each do |k,v|
+        next if k == "_id"
+        changes[k] = read_attribute(k)
+      end
+      {"$set" => changes}
+    end
+  end
+
+  def delete
+    self.class.collection.find({"_id" => id}).remove
+    @deleted = true
+  end
+
+  def deleted?
+    @deleted == true
+  end
+end
+
 end
 
 module MyMongoid::Document::ClassMethods
@@ -169,6 +232,7 @@ module MyMongoid::Document::ClassMethods
   end
 
   def find(query)
+    query = {"_id" => query} if query.is_a?(String)
     result = self.collection.find(query).one
     if result.nil?
       raise MyMongoid::RecordNotFoundError
