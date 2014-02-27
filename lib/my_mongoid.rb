@@ -1,5 +1,6 @@
 require "my_mongoid/version"
-
+require "active_support"
+require "active_model"
 require "moped"
 
 class MyMongoid::DuplicateFieldError < RuntimeError
@@ -64,6 +65,7 @@ module MyMongoid::Document
   def self.included(klass)
     klass.module_eval do
       extend ClassMethods
+      include MyMongoid::Callbacks
       field :_id, :as => :id
       MyMongoid.register_model(klass)
     end
@@ -174,6 +176,14 @@ module MyMongoid::Document
   end
 end
 
+module MyMongoid::Callbacks
+  extend ActiveSupport::Concern
+
+  included do
+    extend ActiveModel::Callbacks
+    define_model_callbacks :delete, :save, :create, :update
+    define_model_callbacks :initialize, :find, :only => :after
+  end
 end
 
 module MyMongoid::Document::ClassMethods
