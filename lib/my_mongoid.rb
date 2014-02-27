@@ -220,9 +220,9 @@ module MyMongoid::Document::ClassMethods
   end
 
   def create(attrs)
-    event = Event.new(attrs)
-    event.save
-    event
+    record = self.new(attrs)
+    record.save
+    record
   end
 
   def instantiate(attrs)
@@ -237,6 +237,6 @@ module MyMongoid::Document::ClassMethods
     if result.nil?
       raise MyMongoid::RecordNotFoundError
     end
-    Event.instantiate(result)
+    self.instantiate(result)
   end
 end
