@@ -254,4 +254,65 @@ module MyMongoid::Document::ClassMethods
     self.instantiate(result)
   end
 end
+
+module MyMongoid::MyCallbacks
+  extend ActiveSupport::Concern
+
+  included do
+  end
+
+  def run_callbacks(name,&block)
+    callbacks = send("_#{name}_callbacks")
+    callbacks.invoke(self,&block)
+  end
+
+  module ClassMethods
+    def define_callbacks(name)
+      attr = "_#{name}_callbacks"
+      class_attribute attr
+      self.send("#{attr}=",CallbackChain.new)
+    end
+
+    def set_callback(name,kind,filter)
+      callbacks = self.send("_#{name}_callbacks")
+      callback = MyMongoid::MyCallbacks::Callback.new(filter,kind)
+      callbacks.append(callback)
+    end
+  end
+
+  class Callback
+    attr_reader :filter
+    attr_reader :kind
+
+    def initialize(filter,kind)
+      @filter = filter
+      @kind = kind
+    end
+
+    def invoke(target)
+      target.send(filter)
+    end
+  end
+
+  class CallbackChain
+    attr_reader :chain
+    def initialize
+      @chain = []
+    end
+
+    def empty?
+      @chain.empty?
+    end
+
+    def append(callback)
+      @chain.push callback
+    end
+
+    def invoke(target,&block)
+      @chain.each do |cb|
+        cb.invoke(target)
+      end
+      block.call
+    end
+  end
 end
