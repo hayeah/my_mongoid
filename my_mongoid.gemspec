@@ -19,7 +19,8 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency("moped", ["~> 2.0.beta6"])
-  spec.add_dependency("active_support", ["~> 3.0.0"])
+  spec.add_dependency("activesupport", ["~> 4.0.3"])
+  spec.add_dependency("activemodel", ["~> 4.0.3"])
 
   spec.add_development_dependency "bundler", "~> 1.3"
   spec.add_development_dependency "rake"

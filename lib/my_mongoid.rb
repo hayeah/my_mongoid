@@ -1,5 +1,6 @@
 require "my_mongoid/version"
-
+require "active_support"
+require "active_model"
 require "moped"
 
 class MyMongoid::DuplicateFieldError < RuntimeError
@@ -64,6 +65,7 @@ module MyMongoid::Document
   def self.included(klass)
     klass.module_eval do
       extend ClassMethods
+      include MyMongoid::Callbacks
       field :_id, :as => :id
       MyMongoid.register_model(klass)
     end
@@ -102,24 +104,28 @@ module MyMongoid::Document
   alias_method :attributes=, :process_attributes
 
   def save
-    if new_record?
-      insert_root_document
-    else
-      update_document
-    end
+    run_callbacks(:save) do
+      if new_record?
+        insert_root_document
+      else
+        update_document
+      end
 
-    clear_changed_attributes
-    true
+      clear_changed_attributes
+      true
+    end
   end
 
   def insert_root_document
-    if self.id.nil?
-      self.id = BSON::ObjectId.new
+    run_callbacks(:create) do
+      if self.id.nil?
+        self.id = BSON::ObjectId.new
+      end
+
+      result = self.class.collection.insert(self.to_document)
+
+      @new_record = false
     end
-
-    result = self.class.collection.insert(self.to_document)
-
-    @new_record = false
   end
 
   def update_attributes(attrs)
@@ -174,6 +180,14 @@ module MyMongoid::Document
   end
 end
 
+module MyMongoid::Callbacks
+  extend ActiveSupport::Concern
+
+  included do
+    extend ActiveModel::Callbacks
+    define_model_callbacks :delete, :save, :create, :update
+    define_model_callbacks :initialize, :find, :only => :after
+  end
 end
 
 module MyMongoid::Document::ClassMethods
@@ -239,4 +253,5 @@ module MyMongoid::Document::ClassMethods
     end
     self.instantiate(result)
   end
+end
 end
