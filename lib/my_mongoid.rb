@@ -289,8 +289,8 @@ module MyMongoid::MyCallbacks
       @kind = kind
     end
 
-    def invoke(target)
-      target.send(filter)
+    def invoke(target,&block)
+      target.send(filter,&block)
     end
   end
 
@@ -309,10 +309,33 @@ module MyMongoid::MyCallbacks
     end
 
     def invoke(target,&block)
-      @chain.each do |cb|
+      _invoke(0,target,block)
+    end
+
+    protected
+    def _invoke(i,target,block)
+      if i == @chain.length
+        block.call
+        return
+      end
+
+      recur = lambda {
+        _invoke(i+1,target,block)
+      }
+
+      cb = @chain[i]
+      case cb.kind
+      when :before
+        r = cb.invoke(target)
+        recur.call
+      when :around
+        cb.invoke(target) {
+          recur.call
+        }
+      when :after
+        recur.call
         cb.invoke(target)
       end
-      block.call
     end
   end
 end
