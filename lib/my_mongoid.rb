@@ -264,6 +264,8 @@ module MyMongoid::MyCallbacks
   def run_callbacks(name,&block)
     callbacks = send("_#{name}_callbacks")
     callbacks.invoke(self,&block)
+    # chain = callbacks.compile
+    # chain.call(self,&block)
   end
 
   module ClassMethods
@@ -292,6 +294,10 @@ module MyMongoid::MyCallbacks
     def invoke(target,&block)
       target.send(filter,&block)
     end
+
+    def compile
+      lambda { |target,&block| target.send(@filter,&block) }
+    end
   end
 
   class CallbackChain
@@ -305,11 +311,45 @@ module MyMongoid::MyCallbacks
     end
 
     def append(callback)
+      @callbacks = nil
       @chain.push callback
     end
 
     def invoke(target,&block)
       _invoke(0,target,block)
+    end
+
+    def compile
+      return @callbacks if !@callbacks.nil?
+      k0 = lambda { |_,&main| main.call }
+      @callbacks = _compile k0, @chain.length - 1
+    end
+
+    def _compile(k,i)
+      return k if i < 0
+
+      cb = @chain[i]
+
+      callback_fn = cb.compile
+      case cb.kind
+      when :before
+        k2 = lambda { |target,&main|
+          callback_fn.call(target)
+          k.call(target,&main)
+        }
+      when :around
+        k2 = lambda { |target,&main|
+          k.call(target) do
+            callback_fn.call(target,&main)
+          end
+        }
+      when :after
+        k2 = lambda { |target,&main|
+          k.call(target,&main)
+          callback_fn.call(target)
+        }
+      end
+      _compile(k2,i-1)
     end
 
     protected
